@@ -1,0 +1,10 @@
+target/
+build/
+*.iso
+*.log
+*.bin
+*.vdi
+*.vbox
+*.vbox-prev
+.idea/
+.vscode/

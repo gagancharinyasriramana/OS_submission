@@ -1,0 +1,11 @@
+[build]
+target = "i686-rustos.json"
+
+[unstable]
+build-std = ["core", "compiler_builtins", "alloc"]
+build-std-features = ["compiler-builtins-mem"]
+
+[target.i686-rustos]
+rustflags = [
+    "-C", "link-arg=-Tlinker.ld",
+]

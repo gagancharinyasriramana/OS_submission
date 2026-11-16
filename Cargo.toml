@@ -1,0 +1,15 @@
+[package]
+name = "rustos"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "rustos"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rustos"
+path = "src/main.rs"
+test = false
+
+[dependencies]
