@@ -8,18 +8,27 @@ use core::arch::global_asm;
 use core::panic::PanicInfo;
 
 pub mod allocator;
+pub mod fs;
+pub mod games;
 pub mod gdt;
 pub mod idt;
 pub mod keyboard;
+pub mod lab_ui;
+pub mod menu;
 pub mod pic;
 pub mod ports;
+pub mod research;
 pub mod rtc;
 pub mod serial;
+pub mod shell;
 pub mod timer;
+pub mod utils;
 pub mod vga;
 
-use alloc::string::String;
-use alloc::vec::Vec;
+use fs::FS;
+use lab_ui::ResearchLab;
+use menu::{DesktopMenu, MenuSelection};
+use shell::{Shell, ShellAction};
 use vga::{Color, WRITER};
 
 global_asm!(
@@ -121,20 +130,18 @@ pub extern "C" fn kernel_main(_mb_info: u32, _mb_magic: u32) -> ! {
     }
     print_boot_step("4 MiB Linked-List Heap");
 
+    // 9. File System Initialization
+    unsafe {
+        FS.init_defaults();
+    }
+    print_boot_step("Virtual In-Memory File System");
+
     // Enable CPU Interrupts
     unsafe {
         core::arch::asm!("sti");
     }
     print_boot_step("CPU Interrupts Enabled (STI)");
 
-    // Test Allocator with Vec and String
-    let mut test_vec = Vec::new();
-    test_vec.push("Vec OK");
-    test_vec.push("String OK");
-    let test_str = String::from("RustOS Heap Active");
-    serial_println!("{}: {} elements", test_str, test_vec.len());
-
-    // Read RTC
     let now = rtc::read_datetime();
     serial_println!(
         "RTC Initialized: {:04}-{:02}-{:02} {:02}:{:02}:{:02} ({})",
@@ -145,11 +152,115 @@ pub extern "C" fn kernel_main(_mb_info: u32, _mb_magic: u32) -> ! {
     println!("\nRustOS booted successfully!");
     serial_println!("RustOS booted");
 
+    // Short pause so user sees boot log
+    timer::sleep_ms(1200);
+
+    // Main system loop: launch Desktop Menu and Shell
+    let mut shell = Shell::new();
+    let mut menu = DesktopMenu::new();
+    let mut research_lab = ResearchLab::new();
+
     loop {
-        unsafe {
-            core::arch::asm!("hlt");
+        let selection = menu.run();
+        match selection {
+            MenuSelection::Shell => {
+                unsafe {
+                    WRITER.clear_screen();
+                    WRITER.set_color(Color::White, Color::Black);
+                }
+                println!("RustOS Interactive Shell (type 'help' for commands, 'games' for menu)");
+                loop {
+                    let cmd = shell.read_line("root@rustos:/# ");
+                    let action = shell.execute(&cmd);
+                    match action {
+                        ShellAction::OpenMenu => break,
+                        ShellAction::OpenResearch => {
+                            research_lab.run();
+                            unsafe {
+                                WRITER.clear_screen();
+                                WRITER.set_color(Color::White, Color::Black);
+                            }
+                            println!("Returned to RustOS Shell.");
+                        }
+                        ShellAction::Continue => {}
+                    }
+                }
+            }
+            MenuSelection::Snake => {
+                games::snake::run();
+            }
+            MenuSelection::SnakesLadders => {
+                games::snakes_ladders::run();
+            }
+            MenuSelection::CarDodge => {
+                games::car_dodge::run();
+            }
+            MenuSelection::ResearchLab => {
+                research_lab.run();
+            }
+            MenuSelection::Files => {
+                shell.execute("vi readme.txt");
+            }
+            MenuSelection::About => {
+                menu::show_about();
+            }
+            MenuSelection::Shutdown => {
+                shell.execute("shutdown");
+            }
         }
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn memcpy(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    let mut i = 0;
+    while i < n {
+        *dest.add(i) = *src.add(i);
+        i += 1;
+    }
+    dest
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn memset(dest: *mut u8, c: i32, n: usize) -> *mut u8 {
+    let mut i = 0;
+    while i < n {
+        *dest.add(i) = c as u8;
+        i += 1;
+    }
+    dest
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn memmove(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    if (dest as usize) < (src as usize) {
+        let mut i = 0;
+        while i < n {
+            *dest.add(i) = *src.add(i);
+            i += 1;
+        }
+    } else if (dest as usize) > (src as usize) {
+        let mut i = n;
+        while i > 0 {
+            i -= 1;
+            *dest.add(i) = *src.add(i);
+        }
+    }
+    dest
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
+    let mut i = 0;
+    while i < n {
+        let a = *s1.add(i);
+        let b = *s2.add(i);
+        if a != b {
+            return a as i32 - b as i32;
+        }
+        i += 1;
+    }
+    0
 }
 
 #[panic_handler]
@@ -168,6 +279,7 @@ fn panic(info: &PanicInfo) -> ! {
         println!("Message: (no message)");
         serial_println!("KERNEL PANIC: (no message)");
     }
+    println!("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 
     loop {
         unsafe {

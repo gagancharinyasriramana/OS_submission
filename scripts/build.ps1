@@ -11,7 +11,7 @@ if (-not (Test-Path $cargo)) {
     else { throw "cargo.exe not found." }
 }
 
-& $cargo build --bin rustos
+& $cargo build --bin rustos --target i686-rustos.json -Z build-std=core,compiler_builtins,alloc
 if ($LASTEXITCODE -ne 0) { throw "Cargo build failed" }
 
 if (-not (Test-Path "iso\boot\grub")) {
